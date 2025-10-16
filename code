@@ -1,0 +1,138 @@
+#include <BluetoothSerial.h>
+#include <DHT.h>
+
+// Define the pins
+#define DHTPIN 4  // GPIO4 on ESP32
+#define DHTTYPE DHT11
+#define FAN_PIN 12      // GPIO12 on ESP32
+#define HEATER_PIN 14   // GPIO14 on ESP32
+#define RIGHT_SWITCH 2  // GPIO4 on ESP32
+#define LEFT_SWITCH 15  // GPIO12 on ESP32
+#define ARMATURE_P 21   // GPIO14 on ESP32
+#define ARMATURE_N 23
+    // Create instances of the sensors
+    DHT dht(DHTPIN, DHTTYPE);
+
+// Create a Bluetooth serial object
+BluetoothSerial SerialBT;
+
+float desiredTemp;    // Desired temperature in degrees Celsius
+bool pre_pos = true;  // move toward righ
+
+void setup() {
+  // Initialize the serial communication
+  Serial.begin(9600);
+  // Initialize the Bluetooth serial
+  SerialBT.begin("ESP32_Temperature_Control");
+  dht.begin();
+  // Set the fan and heater pins as output
+  pinMode(FAN_PIN, OUTPUT);
+  pinMode(HEATER_PIN, OUTPUT);
+  pinMode(RIGHT_SWITCH, INPUT);
+  pinMode(LEFT_SWITCH, INPUT);
+  pinMode(ARMATURE_P, OUTPUT);
+  pinMode(ARMATURE_N, OUTPUT);
+  if (SerialBT.available()) {
+    desiredTemp = SerialBT.parseFloat();
+    Serial.print("Desired temperature: ");
+    Serial.print(desiredTemp);
+    Serial.println(" degrees Celsius");
+  }
+}
+
+void loop() {
+  bool switchrState = digitalRead(RIGHT_SWITCH);
+  bool switchlState = digitalRead(LEFT_SWITCH);
+
+  // Read the temperature from the sensor
+  float h = dht.readHumidity();
+  // Read temperature as Celsius (the default)
+  float t = dht.readTemperature();
+  // Read temperature as Fahrenheit (isFahrenheit = true)
+  float f = dht.readTemperature(true);
+  // Check if any reads failed and exit early (to try again).
+  if (isnan(h) || isnan(t) || isnan(f)) {
+    Serial.println(F("Failed to read from DHT sensor!"));
+    return;
+  }
+  if (SerialBT.available()) {
+    float input = SerialBT.parseFloat();
+    if (input != 0) {
+      if (input == 1000) {
+        pre_pos = true;
+        SerialBT.println("Motor is supposed to move towards switch right\n");
+      } else if (input == -1000) {
+        pre_pos = false;
+        SerialBT.println("Motor is supposed to move towards switch left\n");
+      } else {
+        desiredTemp = input;
+        Serial.print("New desired temperature: ");
+        Serial.print(desiredTemp);
+        Serial.println(" degrees Celsius");
+      }
+    }
+  }
+  // Compute heat index in Fahrenheit (the default)
+  float hif = dht.computeHeatIndex(f, h);
+  // Compute heat index in Celsius (isFahreheit = false)
+  float hic = dht.computeHeatIndex(t, h, false);
+  Serial.print(F("Humidity: "));
+  Serial.print(h);
+  Serial.print(F("%  Temperature: "));
+  Serial.print(t);
+  Serial.print(F("°C "));
+  SerialBT.print(F("%  Temperature: "));
+  SerialBT.print(t);
+  SerialBT.print(F("°C \n"));
+  Serial.print(f);
+  Serial.print(F("°F  Heat index: "));
+  Serial.print(hic);
+  Serial.print(F("°C "));
+  Serial.print(hif);
+  Serial.println(F("°F"));
+  // Print the current temperature
+  Serial.print("Current temperature: ");
+  Serial.print(t);
+  Serial.println(" degrees Celsius");
+
+  // Check if the temperature is within the desired range
+  if (t > desiredTemp + 2.5) {
+    // Temperature is too high, turn on the fan
+    digitalWrite(FAN_PIN, HIGH);
+    digitalWrite(HEATER_PIN, LOW);
+    Serial.println("Temperature is too high.");
+  } else if (t < desiredTemp - 2.5) {
+    // Temperature is too low, turn on the heater
+    digitalWrite(HEATER_PIN, HIGH);
+    digitalWrite(FAN_PIN, LOW);
+    Serial.println("Temperature is too low.");
+  } else {
+    // Temperature is within the desired range, turn off both fan and heater
+    digitalWrite(FAN_PIN, LOW);
+    digitalWrite(HEATER_PIN, LOW);
+    Serial.println("Temperature is within the desired range.");
+  }
+
+  if (switchlState == HIGH) {
+    pre_pos = true;
+    digitalWrite(ARMATURE_N, HIGH);
+    digitalWrite(ARMATURE_P, LOW);
+    Serial.println("Motor moving towards switch right");
+  } else if (switchrState == HIGH) {
+    pre_pos = false;
+    digitalWrite(ARMATURE_P, HIGH);
+    digitalWrite(ARMATURE_N, LOW);
+    Serial.println("Motor moving towards switch left");
+  } else if (pre_pos) {
+    Serial.println("Motor moving towards switch right");
+    digitalWrite(ARMATURE_N, HIGH);
+    digitalWrite(ARMATURE_P, LOW);
+  } else {
+    digitalWrite(ARMATURE_P, HIGH);
+    digitalWrite(ARMATURE_N, LOW);
+    Serial.println("Motor moving towards switch left");
+  }
+
+  // Wait for a short period before reading the temperature again
+  delay(2000);  // Delay for 1 second
+}
