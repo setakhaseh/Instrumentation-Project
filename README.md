@@ -89,7 +89,7 @@ To design and implement a **home warm air control device** that:
 - **Communication:** Bluetooth (BLE)  
 - **Motor Driver:** 2-channel relay module  
 - **Language:** C / Arduino
-- 
+
 ##  Demo
 
 A demo video of the project operation, including wireless temperature monitoring and motor control, is available in:  
